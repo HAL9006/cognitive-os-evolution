@@ -1,0 +1,13 @@
+﻿name: Help
+description: 今つまずいている所をそのまま書いてください（1行でOK）
+title: "Help: ここに困りごとを書く"
+labels: ["help"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 何に困っていますか？
+      description: 例) pushでエラー / どのボタン押せばいい？ / SSOTの場所
+      placeholder: 一言でOK
+    validations:
+      required: true

@@ -1,0 +1,31 @@
+﻿name: Nudge / 次の一手ガイド
+on:
+  push:
+    branches: [main]
+  issues:
+    types: [opened, labeled]
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose message
+        id: msg
+        run: |
+          echo "BODY=🟢 反映完了！次の一手
+- SSOT: docs/jarvis_skillboard.md を1行編集→保存
+- その後: `coe` で 2) を実行→GitHub Actionsが緑か確認
+- 迷ったら: docs/ONE-PAGE.md を開く" >> $GITHUB_OUTPUT
+      - name: Comment on issue (help)
+        if: github.event_name == 'issues' && contains(toJson(github.event.issue.labels.*.name), 'help')
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            🙌 来てくれてありがとう！いまの“次の一手”です：
+            1. `docs/ONE-PAGE.md` を開く
+            2. 何も分からなくてOK。`coe` を実行→メニューの 2) を選ぶ
+            3. エラー画面をここに貼ってくれたら、こちらで手順に落とします
+      - name: Create a run note on push
+        if: github.event_name == 'push'
+        run: echo "Push received. Keep editing SSOT → run coe → enjoy." 
