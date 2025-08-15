@@ -1,0 +1,20 @@
+﻿name: SSOT Auto Evolution (Minimal)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: SSOT quick check
+        run: |
+          echo "✅ SSOT detected:"
+          test -f docs/jarvis_skillboard.md && echo "docs/jarvis_skillboard.md found"
