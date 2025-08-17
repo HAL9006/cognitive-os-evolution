@@ -1,0 +1,132 @@
+name: User Learning Log (auto)
+
+on:
+  pull_request:
+    types: [closed]
+  push:
+    branches: [main]
+    paths:
+      - 'trinity/**'
+      - 'docs/**'
+      - 'README.md'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why run manually (optional)'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  build-log:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect context
+        id: ctx
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const now = new Date().toISOString();
+            let pr = null;
+            if (context.payload.pull_request) {
+              const p = context.payload.pull_request;
+              // list files changed in PR
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: p.number,
+                per_page: 100
+              });
+              pr = {
+                number: p.number, title: p.title, url: p.html_url,
+                merged_by: p.merged_by ? p.merged_by.login : null,
+                files: files.map(f => f.filename)
+              };
+            }
+            // latest canvas/doc md
+            const targets = ['trinity','docs'];
+            let latestFile = '', latestMtime = 0;
+            function walk(d){ if(!fs.existsSync(d)) return;
+              for(const f of fs.readdirSync(d)){
+                const p = path.join(d,f), st = fs.statSync(p);
+                if(st.isDirectory()) walk(p);
+                else if(p.endsWith('.md') && st.mtimeMs>latestMtime){ latestMtime=st.mtimeMs; latestFile=p; }
+              }
+            }
+            targets.forEach(walk);
+            let canvasTitle='';
+            if(latestFile){
+              try{ const m = fs.readFileSync(latestFile,'utf8').match(/^#\s+(.+)$/m);
+                   canvasTitle = m ? m[1].trim() : ''; } catch(e){}
+            }
+            core.setOutput('now', now);
+            core.setOutput('canvas', latestFile);
+            core.setOutput('canvasTitle', canvasTitle);
+            core.setOutput('pr', pr ? JSON.stringify(pr) : '');
+            core.setOutput('event', context.eventName);
+
+      - name: Render log
+        run: |
+          NOW='${{ steps.ctx.outputs.now }}'
+          DATE=$(echo "$NOW" | cut -dT -f1)
+          DIR="logs/learning/$DATE"
+          mkdir -p "$DIR"
+          FILE="$DIR/${DATE}_auto.md"
+
+          CANVAS='${{ steps.ctx.outputs.canvas }}'
+          TITLE='${{ steps.ctx.outputs.canvasTitle }}'
+          PR_JSON='${{ steps.ctx.outputs.pr }}'
+          EVENT='${{ steps.ctx.outputs.event }}'
+
+          {
+            echo '---'
+            echo "timestamp: $NOW"
+            echo "event: $EVENT"
+            if [ -n "$PR_JSON" ]; then echo "trigger: pr-merged"; else echo "trigger: push"; fi
+            echo "canvas: \"$CANVAS\""
+            echo "canvas_title: \"$TITLE\""
+            echo 'hypotheses:'
+            echo '  - "英語UIと日本語手順の不一致は混乱を生みやすい。UIの実ラベル優先でガイドを補正する。"'
+            echo '  - "疲労兆候がある時は手順をマイクロステップ化し、スクショ依頼を提案する。"'
+            echo 'signals:'
+          } > "$FILE"
+
+          if [ -n "$PR_JSON" ]; then
+            echo "$PR_JSON" | jq -r '
+              "  - merged_pr: #"+.number+" \""+.title+"\"",
+              "  - files_changed: "+(.files|length|tostring),
+              ("  - touched_files:\n"+(.files | map("    - "+.) | join("\n")))
+            ' >> "$FILE"
+          else
+            echo "  - push_paths: updated canvas/docs" >> "$FILE"
+          fi
+
+          cat >> "$FILE" <<'MD'
+
+          ## Summary
+          - Context: Canvas/Docs更新 or PRマージ。
+          - Assistant: GPT-5（Noema — lineage）
+          - Intent: 実画面のラベルに合わせた指示へ自動補正。
+
+          ## Next actions (AI)
+          1. UIラベルを**引用**した手順で再提示（例「Settings」「Issues」）。
+          2. 公式ドキュメントURLを添付。
+          3. 迷い検知時は「スクショ→解析」を提案、チェックリストを自動生成。
+
+          MD
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "chore(learning): auto log $DATE" || echo "no changes"
+          git push || true
+
+      - name: Path
+        run: echo "📘 Log: logs/learning/${{ steps.ctx.outputs.now }} | canvas=${{ steps.ctx.outputs.canvas }}"
